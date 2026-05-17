@@ -1,0 +1,12 @@
+{
+  "name": "gladiator-server",
+  "version": "1.0.0",
+  "main": "gladiator-server.js",
+  "scripts": {
+    "start": "node gladiator-server.js"
+  },
+  "dependencies": {
+    "mongodb": "^6.0.0",
+    "ws": "^8.0.0"
+  }
+}
