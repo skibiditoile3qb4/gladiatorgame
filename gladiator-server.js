@@ -1,13 +1,12 @@
 const WebSocket = require('ws');
 const http = require('http');
-const url = require('url');
 const { MongoClient } = require('mongodb');
 const crypto = require('crypto');
 
-// ─── CONFIG ──────────────────────────────────────────────────────────────────
-const MONGO_URI = process.env.MONGO_URI;
-const PORT = process.env.PORT || 8080;
-const SESSION_SECRET = process.env.SESSION_SECRET || 'gladiator_secret_change_me';
+// ─── CONFIG ───────────────────────────────────────────────────────────────────
+const MONGO_URI       = process.env.MONGO_URI;
+const PORT            = process.env.PORT || 8080;
+const SESSION_SECRET  = process.env.SESSION_SECRET
 
 // ─── DB ───────────────────────────────────────────────────────────────────────
 let db = null;
@@ -16,7 +15,6 @@ async function connectDB() {
   try {
     const client = await MongoClient.connect(MONGO_URI);
     db = client.db('gladiator_db');
-    // Ensure unique index on username
     await db.collection('users').createIndex({ username: 1 }, { unique: true });
     console.log('MongoDB connected → gladiator_db');
   } catch (e) {
@@ -25,18 +23,10 @@ async function connectDB() {
 }
 connectDB();
 
-// ─── HELPERS ─────────────────────────────────────────────────────────────────
-function generateId() {
-  return crypto.randomBytes(8).toString('hex');
-}
-
-function hashPassword(password) {
-  return crypto.createHmac('sha256', SESSION_SECRET).update(password).digest('hex');
-}
-
-function generateSessionToken() {
-  return crypto.randomBytes(32).toString('hex');
-}
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+function generateId()           { return crypto.randomBytes(8).toString('hex'); }
+function hashPassword(pw)       { return crypto.createHmac('sha256', SESSION_SECRET).update(pw).digest('hex'); }
+function generateSessionToken() { return crypto.randomBytes(32).toString('hex'); }
 
 function log(type, data) {
   const skip = ['HEARTBEAT', 'POSITION'];
@@ -46,47 +36,38 @@ function log(type, data) {
 
 // ─── SERVER SETUP ─────────────────────────────────────────────────────────────
 const server = http.createServer();
-const wss = new WebSocket.Server({ server });
+const wss    = new WebSocket.Server({ server });
 
 // clientId → { ws, userId, username, elo, room, lastHeartbeat, inQueue, inMatch }
-const clients = new Map();
+const clients  = new Map();
 // roomName → Set of clientIds
-const rooms = new Map();
-// sessionToken → userId  (in-memory session store)
+const rooms    = new Map();
+// sessionToken → userId
 const sessions = new Map();
 
-// ─── BROADCAST ───────────────────────────────────────────────────────────────
+// ─── BROADCAST ────────────────────────────────────────────────────────────────
 function broadcast(room, message, excludeId = null) {
   if (!rooms.has(room)) return;
   rooms.get(room).forEach(clientId => {
     if (clientId === excludeId) return;
     const c = clients.get(clientId);
-    if (c && c.ws.readyState === WebSocket.OPEN) {
-      c.ws.send(JSON.stringify(message));
-    }
+    if (c && c.ws.readyState === WebSocket.OPEN) c.ws.send(JSON.stringify(message));
   });
 }
 
 function sendTo(clientId, message) {
   const c = clients.get(clientId);
-  if (c && c.ws.readyState === WebSocket.OPEN) {
-    c.ws.send(JSON.stringify(message));
-  }
+  if (c && c.ws.readyState === WebSocket.OPEN) c.ws.send(JSON.stringify(message));
 }
 
 // ─── WEBSOCKET ────────────────────────────────────────────────────────────────
-wss.on('connection', (ws, req) => {
+wss.on('connection', (ws) => {
   const clientId = generateId();
   clients.set(clientId, {
-    ws,
-    id: clientId,
-    userId: null,
-    username: null,
-    elo: null,
-    room: null,
-    lastHeartbeat: Date.now(),
-    inQueue: false,
-    inMatch: false
+    ws, id: clientId,
+    userId: null, username: null, elo: null,
+    room: null, lastHeartbeat: Date.now(),
+    inQueue: false, inMatch: false
   });
 
   ws.send(JSON.stringify({ type: 'connected', clientId }));
@@ -94,8 +75,7 @@ wss.on('connection', (ws, req) => {
 
   ws.on('message', (raw) => {
     try {
-      const data = JSON.parse(raw);
-      handleMessage(clientId, data);
+      handleMessage(clientId, JSON.parse(raw));
     } catch (e) {
       sendTo(clientId, { type: 'error', message: 'Invalid JSON' });
     }
@@ -108,18 +88,18 @@ wss.on('connection', (ws, req) => {
 // ─── MESSAGE ROUTER ───────────────────────────────────────────────────────────
 function handleMessage(clientId, data) {
   switch (data.type) {
-    case 'register':       return handleRegister(clientId, data);
-    case 'login':          return handleLogin(clientId, data);
-    case 'resume_session': return handleResumeSession(clientId, data);
-    case 'logout':         return handleLogout(clientId, data);
-    case 'join_room':      return handleJoinRoom(clientId, data);
-    case 'leave_room':     return handleLeaveRoom(clientId);
-    case 'heartbeat':      return handleHeartbeat(clientId, data);
-    case 'get_players':    return handleGetPlayers(clientId);
-    case 'get_queue_count':return handleGetQueueCount(clientId);
-    case 'get_leaderboard':return handleGetLeaderboard(clientId);
-    case 'player_action':  return handlePlayerAction(clientId, data);
-    case 'update_elo':     return handleUpdateElo(clientId, data);
+    case 'register':        return handleRegister(clientId, data);
+    case 'login':           return handleLogin(clientId, data);
+    case 'resume_session':  return handleResumeSession(clientId, data);
+    case 'logout':          return handleLogout(clientId, data);
+    case 'join_room':       return handleJoinRoom(clientId, data);
+    case 'leave_room':      return handleLeaveRoom(clientId);
+    case 'heartbeat':       return handleHeartbeat(clientId, data);
+    case 'get_players':     return handleGetPlayers(clientId);
+    case 'get_queue_count': return handleGetQueueCount(clientId);
+    case 'get_leaderboard': return handleGetLeaderboard(clientId);
+    case 'player_action':   return handlePlayerAction(clientId, data);
+    case 'update_elo':      return handleUpdateElo(clientId, data);
     default:
       sendTo(clientId, { type: 'error', message: `Unknown type: ${data.type}` });
   }
@@ -129,52 +109,37 @@ function handleMessage(clientId, data) {
 async function handleRegister(clientId, data) {
   const { username, password } = data;
 
-  if (!username || !password) {
+  if (!username || !password)
     return sendTo(clientId, { type: 'register_result', success: false, message: 'Username and password required' });
-  }
-  if (username.length < 3 || username.length > 20) {
+  if (username.length < 3 || username.length > 20)
     return sendTo(clientId, { type: 'register_result', success: false, message: 'Username must be 3–20 characters' });
-  }
-  if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+  if (!/^[a-zA-Z0-9_]+$/.test(username))
     return sendTo(clientId, { type: 'register_result', success: false, message: 'Username: letters, numbers, underscores only' });
-  }
-  if (password.length < 4) {
+  if (password.length < 4)
     return sendTo(clientId, { type: 'register_result', success: false, message: 'Password must be at least 4 characters' });
-  }
-  if (!db) return sendTo(clientId, { type: 'register_result', success: false, message: 'Database unavailable' });
+  if (!db)
+    return sendTo(clientId, { type: 'register_result', success: false, message: 'Database unavailable' });
 
   try {
     const userId = generateId();
-    const token = generateSessionToken();
+    const token  = generateSessionToken();
     await db.collection('users').insertOne({
-      userId,
-      username,
+      userId, username,
       password: hashPassword(password),
-      elo: 1000,
-      wins: 0,
-      losses: 0,
+      elo: 1000, wins: 0, losses: 0,
       createdAt: Date.now()
     });
 
     sessions.set(token, userId);
-
     const client = clients.get(clientId);
-    client.userId = userId;
-    client.username = username;
-    client.elo = 1000;
+    client.userId = userId; client.username = username; client.elo = 1000;
 
     log('REGISTER', { username, userId });
-    sendTo(clientId, {
-      type: 'register_result',
-      success: true,
-      token,
-      username,
-      elo: 1000
-    });
+    sendTo(clientId, { type: 'register_result', success: true, token, username, elo: 1000 });
   } catch (e) {
-    if (e.code === 11000) {
+    if (e.code === 11000)
       sendTo(clientId, { type: 'register_result', success: false, message: 'Username already taken' });
-    } else {
+    else {
       log('REGISTER_ERROR', { error: e.message });
       sendTo(clientId, { type: 'register_result', success: false, message: 'Server error' });
     }
@@ -183,34 +148,27 @@ async function handleRegister(clientId, data) {
 
 async function handleLogin(clientId, data) {
   const { username, password } = data;
-  if (!username || !password) {
+  if (!username || !password)
     return sendTo(clientId, { type: 'login_result', success: false, message: 'Username and password required' });
-  }
-  if (!db) return sendTo(clientId, { type: 'login_result', success: false, message: 'Database unavailable' });
+  if (!db)
+    return sendTo(clientId, { type: 'login_result', success: false, message: 'Database unavailable' });
 
   try {
     const user = await db.collection('users').findOne({ username });
-    if (!user || user.password !== hashPassword(password)) {
+    if (!user || user.password !== hashPassword(password))
       return sendTo(clientId, { type: 'login_result', success: false, message: 'Invalid username or password' });
-    }
 
     const token = generateSessionToken();
     sessions.set(token, user.userId);
 
     const client = clients.get(clientId);
-    client.userId = user.userId;
-    client.username = user.username;
-    client.elo = user.elo;
+    client.userId = user.userId; client.username = user.username; client.elo = user.elo;
 
     log('LOGIN', { username, userId: user.userId });
     sendTo(clientId, {
-      type: 'login_result',
-      success: true,
-      token,
-      username: user.username,
-      elo: user.elo,
-      wins: user.wins || 0,
-      losses: user.losses || 0
+      type: 'login_result', success: true, token,
+      username: user.username, elo: user.elo,
+      wins: user.wins || 0, losses: user.losses || 0
     });
   } catch (e) {
     log('LOGIN_ERROR', { error: e.message });
@@ -220,11 +178,11 @@ async function handleLogin(clientId, data) {
 
 async function handleResumeSession(clientId, data) {
   const { token } = data;
-  if (!token) return sendTo(clientId, { type: 'session_result', success: false });
-  if (!db) return sendTo(clientId, { type: 'session_result', success: false });
+  if (!token)   return sendTo(clientId, { type: 'session_result', success: false });
+  if (!db)      return sendTo(clientId, { type: 'session_result', success: false });
 
   const userId = sessions.get(token);
-  if (!userId) return sendTo(clientId, { type: 'session_result', success: false, message: 'Session expired' });
+  if (!userId)  return sendTo(clientId, { type: 'session_result', success: false, message: 'Session expired' });
 
   try {
     const user = await db.collection('users').findOne({ userId });
@@ -234,17 +192,12 @@ async function handleResumeSession(clientId, data) {
     }
 
     const client = clients.get(clientId);
-    client.userId = user.userId;
-    client.username = user.username;
-    client.elo = user.elo;
+    client.userId = user.userId; client.username = user.username; client.elo = user.elo;
 
     sendTo(clientId, {
-      type: 'session_result',
-      success: true,
-      username: user.username,
-      elo: user.elo,
-      wins: user.wins || 0,
-      losses: user.losses || 0
+      type: 'session_result', success: true,
+      username: user.username, elo: user.elo,
+      wins: user.wins || 0, losses: user.losses || 0
     });
   } catch (e) {
     sendTo(clientId, { type: 'session_result', success: false });
@@ -257,9 +210,7 @@ function handleLogout(clientId, data) {
   const client = clients.get(clientId);
   if (client) {
     handleLeaveRoom(clientId);
-    client.userId = null;
-    client.username = null;
-    client.elo = null;
+    client.userId = null; client.username = null; client.elo = null;
   }
   sendTo(clientId, { type: 'logout_result', success: true });
 }
@@ -267,9 +218,8 @@ function handleLogout(clientId, data) {
 // ─── ROOM ─────────────────────────────────────────────────────────────────────
 function handleJoinRoom(clientId, data) {
   const client = clients.get(clientId);
-  if (!client || !client.username) {
+  if (!client || !client.username)
     return sendTo(clientId, { type: 'error', message: 'Must be logged in to join a room' });
-  }
 
   const room = data.room || 'gladiator_arena';
   if (client.room) handleLeaveRoom(clientId);
@@ -346,9 +296,7 @@ async function handleGetLeaderboard(clientId) {
   try {
     const top = await db.collection('users')
       .find({}, { projection: { username: 1, elo: 1, wins: 1, losses: 1 } })
-      .sort({ elo: -1 })
-      .limit(50)
-      .toArray();
+      .sort({ elo: -1 }).limit(50).toArray();
     sendTo(clientId, { type: 'leaderboard_data', leaderboard: top });
   } catch (e) {
     log('LEADERBOARD_ERROR', { error: e.message });
@@ -356,11 +304,24 @@ async function handleGetLeaderboard(clientId) {
 }
 
 // ─── GAME ACTIONS ─────────────────────────────────────────────────────────────
+// Relay all player actions (move, attack, dash, shield, parry_damage, etc.) to
+// everyone else in the room.  The server is intentionally thin here — game logic
+// lives on the clients.  We do light validation to avoid obviously bad payloads.
+
+const ALLOWED_ACTIONS = new Set([
+  'join_queue', 'leave_queue', 'match_start',
+  'player_move', 'attack', 'dash',
+  'shield',        // NEW: shield raise/lower relay
+  'parry_damage',  // NEW: parry counter-damage relay
+]);
+
 function handlePlayerAction(clientId, data) {
   const client = clients.get(clientId);
   if (!client || !client.room) return;
 
-  // Relay to everyone else in the room
+  // Silently drop unknown action types to reduce spam
+  if (!ALLOWED_ACTIONS.has(data.action)) return;
+
   broadcast(client.room, {
     type: 'player_action',
     playerId: clientId,
@@ -378,11 +339,6 @@ async function handleUpdateElo(clientId, data) {
   if (typeof elo !== 'number' || elo < 0) return;
 
   try {
-    const update = { elo, lastMatch: Date.now() };
-    if (won === true)  update.$inc = { wins: 1 };
-    if (won === false) update.$inc = { losses: 1 };
-
-    // Use separate inc to avoid overwrite conflict
     const setData = { elo, lastMatch: Date.now() };
     const incData = {};
     if (won === true)  incData.wins = 1;
@@ -422,7 +378,7 @@ setInterval(() => {
 }, 10000);
 
 // ─── HTTP STATUS ──────────────────────────────────────────────────────────────
-server.on('request', (req, res) => {
+server.on('request', (_req, res) => {
   res.setHeader('Content-Type', 'application/json');
   res.statusCode = 200;
   res.end(JSON.stringify({
@@ -433,10 +389,6 @@ server.on('request', (req, res) => {
   }));
 });
 
-server.listen(PORT, () => {
-  console.log(`Gladiator Arena server on port ${PORT}`);
-});
+server.listen(PORT, () => console.log(`Gladiator Arena server on port ${PORT}`));
 
-process.on('SIGTERM', () => {
-  wss.close(() => server.close(() => process.exit(0)));
-});
+process.on('SIGTERM', () => wss.close(() => server.close(() => process.exit(0))));
