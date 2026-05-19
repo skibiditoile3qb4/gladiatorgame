@@ -311,8 +311,7 @@ async function handleGetLeaderboard(clientId) {
 const ALLOWED_ACTIONS = new Set([
   'join_queue', 'leave_queue', 'match_start',
   'player_move', 'attack', 'dash',
-  'shield',        // NEW: shield raise/lower relay
-  'parry_damage',  // NEW: parry counter-damage relay
+  'shield', 'parry_damage', 'health_sync',
 ]);
 
 function handlePlayerAction(clientId, data) {
